@@ -44,8 +44,10 @@
 
     searchForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const { id } = e.detail || { id: null };
       const query = searchInput.value;
-      if (query === '') return;
+      if (!id && query === '') return;
+      if (!id) window.location.hash = '';
       const startSearch = new Date().getTime();
       const list = document.getElementById('list');
       const status = document.getElementById('status');
@@ -54,7 +56,9 @@
       status.style.display = 'block';
       let queryUrl = '';
       let title = '';
-      if (query.includes('http://www.world-art.ru/cinema/cinema.php?id=')
+      if (id) {
+        queryUrl = `id=${encodeURI(id)}&`;
+      } else if (query.includes('http://www.world-art.ru/cinema/cinema.php?id=')
         || query.includes('http://www.world-art.ru/animation/animation.php?id=')) {
         queryUrl = `worldart_link=${encodeURI(query)}&`;
       } else {
@@ -76,6 +80,7 @@
         const key = el.worldart_link || `${el.type}${el.year}${el.title_orig}`;
         if (!items[key]) {
           items[key] = {};
+          items[key].id = el.id;
           items[key].title = el.title || '';
           items[key].titleOrig = el.title_orig || '';
           items[key].titleOther = el.other_title || '';
@@ -120,7 +125,7 @@
     </div>
   </div>
   <div class="right">
-    <button class="right-button iframe-button" data-link="${item.link}">▷</button>
+    <button class="right-button iframe-button" data-link="${item.link}" data-id="${item.id}">▷</button>
     <button class="right-button json-button" data-index="${index}">JSON</button>
   </div>
 </div>`;
@@ -142,7 +147,10 @@
       const { className } = target;
       if (className.includes('iframe-button')) {
         const link = target.getAttribute('data-link');
-        if (iframe.src !== link) iframe.src = link;
+        if (iframe.src !== link) {
+          iframe.src = link;
+          window.location.hash = target.getAttribute('data-id');
+        }
         iframeOverlay.style.display = 'block';
       } else if (className.includes('json-button') && sortedItems.length) {
         const index = target.getAttribute('data-index');
@@ -170,5 +178,20 @@
         jsonOverlay.style.display = 'none';
       }
     }, { passive: true });
+  }
+
+  { // id from url hash
+    const id = window.location.hash.substr(1);
+    if (id) {
+      const e = new CustomEvent('submit', { detail: { id } });
+      const searchForm = document.getElementById('search-form');
+      searchForm.dispatchEvent(e);
+    }
+  }
+  {
+    const messageListner = (e) => {
+      console.log(e.data);
+    };
+    window.addEventListener('message', messageListner);
   }
 }());
