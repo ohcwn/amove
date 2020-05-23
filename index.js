@@ -188,10 +188,4 @@
       searchForm.dispatchEvent(e);
     }
   }
-  {
-    const messageListner = (e) => {
-      console.log(e.data);
-    };
-    window.addEventListener('message', messageListner);
-  }
 }());
