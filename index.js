@@ -90,6 +90,7 @@
           items[key].img = getImg(el.worldart_link);
           items[key].link = `https:${el.link}`;
           items[key].weight = 0;
+          items[key].tr = {};
           items[key].raw = [];
           // weighing
           if (title && titlesIncludes(items[key], title)) items[key].weight += 10;
@@ -97,6 +98,7 @@
         } else {
           items[key].translation += `, ${el.translation.title}`;
         }
+        items[key].tr[el.translation.id] = el.id;
         items[key].raw.push(el);
       });
       // sort
@@ -188,4 +190,15 @@
       searchForm.dispatchEvent(e);
     }
   }
+  // update hash by message from iframe
+  window.addEventListener('message', ({ data }) => {
+    if (data?.key === 'kodik_player_current_episode') {
+      const id = window.location.hash.substr(1);
+      const item = sortedItems.find((it) => Object.values(it.tr).includes(id));
+      if (item) {
+        const newId = item.tr[data.value.translation.id];
+        if (newId) window.location.hash = newId;
+      }
+    }
+  });
 }());
