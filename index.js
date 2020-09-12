@@ -3,6 +3,22 @@
 
   let sortedItems = [];
 
+  const hashGet = () => {
+    if (!window.location.hash) return {};
+    const ids = window.location.hash.substr(1).split('&');
+    const id = ids.find((s) => s.includes('movie-') || s.includes('serial-'));
+    const shikimoriEntry = ids.find((s) => s.includes('shikimori-'));
+    return { id, shikimoriId: shikimoriEntry?.substring(10) };
+  };
+
+  const hashSet = ({ id, shikimoriId }) => {
+    if (!id && !shikimoriId) return;
+    let hash = '';
+    if (shikimoriId) hash = `shikimori-${shikimoriId}`;
+    if (id) hash += hash ? `&${id}` : id;
+    window.location.hash = hash;
+  };
+
   { // backgroundButton click
     const background = document.getElementById('background');
     const backgroundButton = document.getElementById('background-button');
@@ -44,10 +60,11 @@
 
     searchForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const { id } = e.detail || { id: null };
+      const { id, shikimoriId } = e.detail || { id: null, shikimoriId: null };
+      const someId = !!id || !!shikimoriId;
       const query = searchInput.value;
-      if (!id && query === '') return;
-      if (!id) window.location.hash = '';
+      if (!someId && query === '') return;
+      if (!someId) window.location.hash = '';
       const startSearch = new Date().getTime();
       const list = document.getElementById('list');
       const status = document.getElementById('status');
@@ -56,16 +73,18 @@
       status.style.display = 'block';
       let queryUrl = '';
       let title = '';
-      if (id) {
-        queryUrl = `id=${encodeURI(id)}&`;
+      if (shikimoriId) {
+        queryUrl = `shikimori_id=${encodeURI(shikimoriId)}`;
+      } else if (id) {
+        queryUrl = `id=${encodeURI(id)}`;
       } else if (query.includes('http://www.world-art.ru/cinema/cinema.php?id=')
         || query.includes('http://www.world-art.ru/animation/animation.php?id=')) {
-        queryUrl = `worldart_link=${encodeURI(query)}&`;
+        queryUrl = `worldart_link=${encodeURI(query)}`;
       } else {
-        queryUrl = `title=${encodeURI(query)}&`;
+        queryUrl = `title=${encodeURI(query)}`;
         title = query;
       }
-      const res = await fetch(`${UrlBeginning}${queryUrl}sign=${urlEnding.replace(/g/g, 9)}`);
+      const res = await fetch(`${UrlBeginning}${queryUrl}&sign=${urlEnding.replace(/g/g, 9)}`);
       const resJson = await res.json();
       const { results } = resJson;
       if (!results || results.length === 0) {
@@ -74,13 +93,19 @@
         if (resJson.error) console.log(resJson.error);
         return;
       }
+      // unshift entry with given id
+      if (id && results.length > 1) {
+        const index = results.findIndex((r) => r.id === id);
+        results.unshift(results.splice(index, 1)[0]);
+      }
       // parse
       const items = {};
       results.forEach((el) => {
-        const key = el.worldart_link || `${el.type}${el.year}${el.title_orig}`;
+        const key = el.worldart_link || el.shikimori_id || `${el.type}${el.year}${el.title_orig}`;
         if (!items[key]) {
           items[key] = {};
           items[key].id = el.id;
+          items[key].shikimoriId = el.shikimori_id || '';
           items[key].title = el.title || '';
           items[key].titleOrig = el.title_orig || '';
           items[key].titleOther = el.other_title || '';
@@ -117,7 +142,7 @@
         html += `<div class="item">
   <div class="left">
     <div class="poster-wrapper">
-      <img class="poster" src="${item.img}" />
+      <img class="poster" src="${item.img}" alt="" />
     </div>
     <div class="info">
       <p class="title">${item.title}</p>
@@ -127,7 +152,7 @@
     </div>
   </div>
   <div class="right">
-    <button class="right-button iframe-button" data-link="${item.link}" data-id="${item.id}">▷</button>
+    <button class="right-button iframe-button" data-link="${item.link}" data-id="${item.id}" data-shikimori_id="${item.shikimoriId}">▷</button>
     <button class="right-button json-button" data-index="${index}">JSON</button>
   </div>
 </div>`;
@@ -151,7 +176,9 @@
         const link = target.getAttribute('data-link');
         if (iframe.src !== link) {
           iframe.src = link;
-          window.location.hash = target.getAttribute('data-id');
+          const id = target.getAttribute('data-id');
+          const shikimoriId = target.getAttribute('data-shikimori_id');
+          hashSet({ id, shikimoriId });
         }
         iframeOverlay.style.display = 'block';
       } else if (className.includes('json-button') && sortedItems.length) {
@@ -182,10 +209,10 @@
     }, { passive: true });
   }
 
-  { // id from url hash
-    const id = window.location.hash.substr(1);
-    if (id) {
-      const e = new CustomEvent('submit', { detail: { id } });
+  { // ids from url hash
+    const { id, shikimoriId } = hashGet();
+    if (id || shikimoriId) {
+      const e = new CustomEvent('submit', { detail: { id, shikimoriId } });
       const searchForm = document.getElementById('search-form');
       searchForm.dispatchEvent(e);
     }
@@ -193,11 +220,13 @@
   // update hash by message from iframe
   window.addEventListener('message', ({ data }) => {
     if (data?.key === 'kodik_player_current_episode') {
-      const id = window.location.hash.substr(1);
+      const { id } = hashGet();
       const item = sortedItems.find((it) => Object.values(it.tr).includes(id));
       if (item) {
         const newId = item.tr[data.value.translation.id];
-        if (newId) window.location.hash = newId;
+        if (newId) {
+          hashSet({ id: newId, shikimoriId: item.shikimoriId });
+        }
       }
     }
   });
