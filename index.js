@@ -48,14 +48,12 @@
       return titles.find((t) => t.includes(lowerStr));
     };
 
-    const getImg = (walink) => {
-      if (!walink) return noImgUrl;
-      const type = walink.substring(walink.lastIndexOf('/') + 1, walink.indexOf('.php'));
-      const id = walink.substring(walink.lastIndexOf('id=') + 3);
-      const dir = type === 'cinema'
-        ? Math.ceil(id / 5000) * 5000
-        : Math.ceil(id / 1000) * 1000;
-      return `http://www.world-art.ru/${type}/img/${dir}/${id}/1.jpg`;
+    const getImg = (shikimoriId) => {
+      if (!shikimoriId) return noImgUrl;
+      const subs = ['nyaa', 'kawai', 'moe', 'desu', 'dere'];
+      const sub = subs[shikimoriId % subs.length];
+      const timestamp = 1604598358 + (+shikimoriId);
+      return `https://${sub}.shikimori.one/system/animes/original/${shikimoriId}.jpg?${timestamp}`;
     };
 
     searchForm.addEventListener('submit', async (e) => {
@@ -112,7 +110,7 @@
           items[key].year = el.year;
           items[key].episodes = el.episodes_count || '';
           items[key].translation = el.translation.title || '';
-          items[key].img = getImg(el.worldart_link);
+          items[key].img = getImg(el.shikimori_id);
           items[key].link = `https:${el.link}`;
           items[key].weight = 0;
           items[key].tr = {};
