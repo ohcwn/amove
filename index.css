@@ -115,6 +115,7 @@ body {
   margin-bottom: 10px;
 }
 
+.item:only-child,
 .item.current {
   background: rgb(255 255 255 / 10%);
 }
@@ -187,6 +188,7 @@ body {
   margin-top: auto;
 }
 
+.item:only-child .underline,
 .item.current .underline {
   text-decoration: underline;
 }
