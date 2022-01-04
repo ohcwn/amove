@@ -1,103 +1,179 @@
 (function main() {
   'use strict';
 
-  let sortedItems = [];
-
-  const hashGet = () => {
-    if (!window.location.hash) return {};
-    const entries = window.location.hash.substring(1).split('&');
-    const id = entries.find((s) => s.includes('movie-') || s.includes('serial-'));
-    const shikimoriEntry = entries.find((s) => s.includes('shikimori-'));
-    return { id, shikimoriId: shikimoriEntry?.substring(10) };
-  };
-
-  const hashSet = ({ id, shikimoriId }) => {
-    if (!id && !shikimoriId) return;
-    let hash = '';
-    if (shikimoriId) hash = `shikimori-${shikimoriId}`;
-    if (id) hash += hash ? `&${id}` : id;
-    window.location.hash = hash;
-  };
-
-  const parse = (results, { queryTitle, presort }) => {
-    const noImgUrl = 'no-img.jpg';
-    const items = {};
-    const getImg = (shikimoriId) => {
-      if (!shikimoriId) return noImgUrl;
-      const subs = ['nyaa', 'kawai', 'moe', 'desu', 'dere'];
-      const sub = subs[shikimoriId % subs.length];
-      const timestamp = 1604598358 + (+shikimoriId);
-      return `https://${sub}.shikimori.one/system/animes/original/${shikimoriId}.jpg?${timestamp}`;
-    };
-    const titlesIncludes = ({ title, titleOrig, titleOther }, str) => {
-      const titles = [
-        title.toLowerCase().replace(/[ ,:]/g, ''),
-        titleOrig.toLowerCase().replace(/[ ,:]/g, ''),
-        titleOther.toLowerCase().replace(/[ ,:]/g, ''),
-      ];
-      const lowerStr = str.toLowerCase().replace(/[ ,:]/g, '');
-      return titles.find((t) => t.includes(lowerStr));
-    };
-    results.forEach((el) => {
-      const key = el.worldart_link || el.shikimori_id || `${el.type}${el.year}${el.title_orig}`;
-      if (!items[key]) {
-        items[key] = {};
-        items[key].id = el.id;
-        items[key].shikimoriId = el.shikimori_id || '';
-        items[key].title = el.title || '';
-        items[key].titleOrig = el.title_orig || '';
-        items[key].titleOther = el.other_title || '';
-        items[key].year = el.year;
-        items[key].episodes = el.last_episode || '';
-        items[key].translation = el.translation.title;
-        if (items[key].episodes) items[key].translation += `[${items[key].episodes}]`;
-        items[key].img = getImg(el.shikimori_id);
-        items[key].link = `https:${el.link}`;
-        items[key].updatedAt = el.updated_at;
-        // weighing
-        if (queryTitle) {
-          items[key].weight = 0;
-          if (titlesIncludes(items[key], queryTitle)) items[key].weight += 10;
-          if (items[key].img !== noImgUrl) items[key].weight += 1;
-        }
-        items[key].tr = {};
-        items[key].raw = [];
-      } else if (presort && items[key].episodes < el.last_episode) {
-        items[key].id = el.id;
-        items[key].link = `https:${el.link}`;
-        items[key].episodes = el.last_episode;
-        let temp = el.translation.title;
-        if (items[key].episodes) temp += `[${items[key].episodes}]`;
-        items[key].translation = `${temp}, ${items[key].translation}`;
-        items[key].updatedAt = el.updated_at;
-      } else {
-        items[key].translation += `, ${el.translation.title}`;
-        if (el.last_episode) items[key].translation += `[${el.last_episode}]`;
+  const hash = (() => {
+    class Hash extends Map {
+      constructor() {
+        super();
+        this.#read();
+        window.addEventListener('hashchange', () => {
+          this.#read();
+        }, { passive: true });
       }
-      items[key].tr[el.translation.id] = el.id;
-      items[key].raw.push(el);
-    });
-    return items;
+
+      #cache = '';
+
+      #read() {
+        const str = window.location.hash.substring(1);
+        if (this.#cache === str) return;
+        super.clear();
+        if (!str) return;
+        const pairs = str.split('&');
+        pairs.forEach((entry) => {
+          super.set(...entry.split('-', 2));
+        });
+        this.#cache = str;
+      }
+
+      #write() {
+        let str = '';
+        super.forEach((value, key) => {
+          if (str) str += '&';
+          str += `${key}`;
+          if (typeof value !== 'undefined') str += `-${value}`;
+        });
+        this.#cache = str;
+        window.location.hash = str;
+      }
+
+      has(key) {
+        if (key === 'id') return super.has('serial') || super.has('move');
+        return super.has(key);
+      }
+
+      get(key) {
+        if (key === 'id') {
+          if (super.has('serial')) return `serial-${super.get('serial')}`;
+          if (super.has('move')) return `move-${super.get('move')}`;
+        }
+        return super.get(key);
+      }
+
+      set(key, value) {
+        if (key === 'id') {
+          if (typeof value !== 'string') return this;
+          if (value.indexOf('serial-') === 0) {
+            super.delete('move');
+            super.set('serial', value.substring(7));
+            this.#write();
+          } else if (value.indexOf('move-') === 0) {
+            super.delete('serial');
+            super.set('move', value.substring(5));
+            this.#write();
+          }
+          return this;
+        }
+        super.set(key, value);
+        this.#write();
+        return this;
+      }
+
+      delete(key) {
+        const r = key === 'id' ? super.delete('serial') || super.delete('move') : super.delete(key);
+        if (r) this.#write();
+        return r;
+      }
+
+      clear() {
+        const bg = super.get('bg');
+        super.clear();
+        if (bg) {
+          super.set('bg', bg);
+          this.#cache = `bg-${bg}`;
+          window.location.hash = `bg-${bg}`;
+        } else {
+          this.#cache = '';
+          window.location.hash = '';
+        }
+      }
+    }
+    return new Hash();
+  })();
+
+  const sha = (() => {
+    const byteToHex = (() => {
+      const alphabet = Array.from({ length: 0xff }, (_, i) => i.toString(16).padStart(2, '0'));
+      return (arrayBuffer) => new Uint8Array(arrayBuffer).reduce((p, c) => p + alphabet[c], '');
+    })();
+    const byteToBase64 = (arrayBuffer) => btoa(
+      String.fromCharCode.apply(null, new Uint8Array(arrayBuffer)),
+    );
+    const whiteListAlg = new Set(['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512']);
+    return async (text, algorithm = 'SHA-256', encoding = 'hex') => {
+      const upperAlg = algorithm.toUpperCase();
+      const alg = whiteListAlg.has(upperAlg) ? upperAlg : 'SHA-256';
+      const byteArray = new TextEncoder().encode(text);
+      const digest = await crypto.subtle.digest(alg, byteArray);
+      return encoding === 'base64' ? byteToBase64(digest) : byteToHex(digest);
+    };
+  })();
+
+  let items = new Map();
+
+  const getImg = (() => {
+    const noImgUrl = 'no-img.jpg';
+    const subs = ['nyaa', 'kawai', 'moe', 'desu', 'dere'];
+    return (item) => {
+      const id = item.shikimori_id;
+      if (!id) return noImgUrl;
+      const sub = subs[id % subs.length];
+      const timestamp = 1604598358 + (+id);
+      return `https://${sub}.shikimori.one/system/animes/original/${id}.jpg?${timestamp}`;
+    };
+  })();
+
+  const parse = async (results) => {
+    const its = new Map();
+    await Promise.all(results.map(async (r) => {
+      const key = await sha(r.imdb_id || r.kinopoisk_id || r.shikimori_id || r.worldart_link || `${r.type}${r.year}${r.title_orig}`);
+      if (!its.has(key)) {
+        its.set(key, {
+          key, img: getImg(r), y: r.year, ep: r.last_episode, top: r, raw: new Map(), tr: new Map(),
+        });
+      } else if (its.get(key).top.last_episode < r.last_episode) {
+        its.get(key).top = r;
+        its.get(key).ep = r.last_episode;
+      }
+      its.get(key).raw.set(r.id, r);
+      its.get(key).tr.set(r.translation.id, r.id);
+    }));
+    return its;
   };
 
-  const buildHTML = () => {
+  const buildString = (item) => {
+    const { top } = item;
+    let string = '';
+    if (item.y) string += `${item.y}г. `;
+    if (item.ep) string += `${item.ep} эп. `;
+    let str = '';
+    item.raw.forEach((r) => {
+      if (str !== '') str += ', ';
+      if (r === top) str += `<span class="underline">${r.translation.title}</span>`;
+      else str += r.translation.title;
+      if (r.last_episode) str += `[${r.last_episode}]`;
+    });
+    return string + str;
+  };
+
+  const buildHTML = (its) => {
     let html = '';
-    sortedItems.forEach((item, index) => {
-      html += `<div class="item">
+    its.forEach((item, key) => {
+      const { top } = item;
+      html += `<div class="item" data-key="${key}">
 <div class="left">
 <div class="poster-wrapper">
   <img class="poster" src="${item.img}" alt="" />
 </div>
 <div class="info">
-  <p class="title">${item.title}</p>
-  <p class="titleOrig">${item.titleOrig}</p>
-  <p class="titleOther">${item.titleOther}</p>
-  <p class="translation">${item.year}г. ${item.episodes}${item.episodes ? ' эп. ' : ''}${item.translation}</p>
+  <p class="title">${top.title ?? ''}</p>
+  <p class="titleOrig">${top.title_orig ?? ''}</p>
+  <p class="titleOther">${top.other_title ?? ''}</p>
+  <p class="string">${buildString(item)}</p>
 </div>
 </div>
 <div class="right">
-<button class="right-button iframe-button" data-link="${item.link}" data-id="${item.id}" data-shikimori_id="${item.shikimoriId}">▷</button>
-<button class="right-button json-button" data-index="${index}">JSON</button>
+<button class="right-button iframe-button">▷</button>
+<button class="right-button json-button">JSON</button>
 </div>
 </div>`;
     });
@@ -106,15 +182,14 @@
 
   const sendQuery = async (query) => {
     const status = document.getElementById('status');
-    const UrlBeginning = 'https://metamedia.glitch.me/api/';
-    const urlEnding = '3052d1g31gb8daf0a1g4cga770fcga3d80bfe1bd3e0e28b7cfd7aacebaaf4f6b';
-    const searchStartTime = new Date().getTime();
+    const baseURL = 'https://metamedia.glitch.me/api/';
+    const searchStartTime = Date.now();
     status.textContent = 'Поиск…';
     status.style.display = 'block';
-    const res = await fetch(`${UrlBeginning}${query}&sign=${urlEnding.replace(/g/g, 9)}`);
+    const res = await fetch(`${baseURL}${query}`);
     const resJson = await res.json();
     const { results } = resJson;
-    const searchTime = new Date().getTime() - searchStartTime;
+    const searchTime = Date.now() - searchStartTime;
     if (!results || results.length === 0) {
       status.textContent = `Ничего не найдено (${searchTime / 1000} сек.)`;
       if (resJson.error) console.log(resJson.error);
@@ -123,37 +198,41 @@
     return [results, searchTime];
   };
 
-  { // backgroundButton click
+  { // background
+    const count = 3;
     const background = document.getElementById('background');
+    { // background initial set
+      const bg = Number.parseInt(hash.get('bg'), 10);
+      const index = bg % count;
+      if (index) {
+        background.src = `wallpaper/${index}.mp4`;
+        if (index !== bg) hash.set('bg', index);
+      } else hash.delete('bg');
+    }
+    // backgroundButton click
     const backgroundButton = document.getElementById('background-button');
-    const backgroundMax = 2;
     backgroundButton.addEventListener('click', () => {
-      let backgroundIndex = parseInt(localStorage.getItem('backgroundIndex'), 10) || 0;
-      backgroundIndex = backgroundIndex < backgroundMax ? backgroundIndex + 1 : 0;
-      background.src = `wallpaper/${backgroundIndex}.mp4`;
-      localStorage.setItem('backgroundIndex', backgroundIndex);
+      let index = Number.parseInt(hash.get('bg'), 10) || 0;
+      index = (index + 1) % count;
+      background.src = `wallpaper/${index}.mp4`;
+      if (index === 0) hash.delete('bg');
+      else hash.set('bg', index);
     }, { passive: true });
   }
   { // newButton click
     const newButton = document.getElementById('new-button');
-    newButton.addEventListener('click', async (e) => {
-      let queryParam = 'types=anime,anime-serial&limit=100';
-      if (e.detail && e.detail.hash) {
-        queryParam += window.location.hash.substring(4);
-      } else {
-        window.location.hash = 'new';
-      }
+    newButton.addEventListener('click', async () => {
+      const queryParam = 'types=anime,anime-serial&limit=100';
+      hash.clear();
+      hash.set('new');
       const list = document.getElementById('list');
       const status = document.getElementById('status');
       list.style.display = 'none';
       const [results, searchTime] = await sendQuery(`list?${queryParam}`);
       if (results.length === 0) return;
-      // reverse make oldest on top, then glue younger to it
-      const items = parse(results.reverse(), { presort: true });
-      // sort
-      sortedItems = Object.values(items).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      status.textContent = `Найдено: ${sortedItems.length} [${results.length}] (${(searchTime) / 1000} сек.)`;
-      list.innerHTML = buildHTML();
+      items = new Map([...await parse(results.reverse())].reverse());
+      status.textContent = `Найдено: ${items.size} [${results.length}] (${(searchTime) / 1000} сек.)`;
+      list.innerHTML = buildHTML(items);
       list.style.display = 'block';
     }, { passive: true });
   }
@@ -168,12 +247,11 @@
       const someId = !!id || !!shikimoriId;
       const query = searchInput.value;
       if (!someId && query === '') return;
-      if (!someId) window.location.hash = '';
+      if (!someId) hash.clear();
       const list = document.getElementById('list');
       const status = document.getElementById('status');
       list.style.display = 'none';
       let queryParam = '';
-      let queryTitle = '';
       if (shikimoriId) {
         queryParam = `shikimori_id=${encodeURI(shikimoriId)}`;
       } else if (id) {
@@ -183,31 +261,16 @@
         queryParam = `worldart_link=${encodeURI(query)}`;
       } else {
         queryParam = `title=${encodeURI(query)}`;
-        queryTitle = query;
       }
       const [results, searchTime] = await sendQuery(`search?${queryParam}`);
       if (results.length === 0) return;
-      // unshift entry with given id
+      items = await parse(results);
       if (id && results.length > 1) {
-        const index = results.findIndex((r) => r.id === id);
-        results.unshift(results.splice(index, 1)[0]);
+        const [[, item]] = items;
+        if (item.raw.has(id)) item.top = item.raw.get(id);
       }
-      const items = parse(results, { queryTitle, presort: !id });
-      if (queryTitle) {
-        sortedItems = Object.values(items).sort((a, b) => {
-          if (b.weight - a.weight) {
-            return b.weight - a.weight;
-          }
-          if (b.year - a.year) {
-            return b.year - a.year;
-          }
-          return a.title.localeCompare(b.title);
-        });
-      } else {
-        sortedItems = Object.values(items);
-      }
-      status.textContent = `Найдено: ${sortedItems.length} [${results.length}] (${(searchTime) / 1000} сек.)`;
-      list.innerHTML = buildHTML();
+      status.textContent = `Найдено: ${items.size} [${results.length}] (${(searchTime) / 1000} сек.)`;
+      list.innerHTML = buildHTML(items);
       list.style.display = 'block';
     });
   }
@@ -220,18 +283,27 @@
     const iframeOverlay = document.getElementById('iframe-overlay');
     list.addEventListener('click', ({ target }) => {
       const { className } = target;
+      if (!className.includes('iframe-button') && !className.includes('json-button')) return;
+      const elemet = target.parentElement.parentElement;
+      const { key } = elemet.dataset;
+      const item = items.get(key);
+      const { top } = item;
       if (className.includes('iframe-button')) {
-        const link = target.getAttribute('data-link');
-        if (iframe.src !== link) {
-          iframe.src = link;
-          const id = target.getAttribute('data-id');
-          const shikimoriId = target.getAttribute('data-shikimori_id');
-          hashSet({ id, shikimoriId });
+        if (iframe.dataset.key !== key) {
+          iframe.src = top.link;
+          iframe.dataset.key = key;
+          hash.delete('new');
+          hash.set('shikimori', top.shikimori_id);
+          hash.set('id', top.id);
+          const prevElement = document.querySelector('.item.current');
+          if (prevElement !== elemet) {
+            if (prevElement) prevElement.classList.remove('current');
+            elemet.classList.add('current');
+          }
         }
         iframeOverlay.style.display = 'block';
-      } else if (className.includes('json-button') && sortedItems.length) {
-        const index = target.getAttribute('data-index');
-        json.textContent = JSON.stringify(sortedItems[index], null, '  ');
+      } else if (className.includes('json-button') && items.size) {
+        json.textContent = JSON.stringify(items.get(key), (k, v) => (v instanceof Map ? [...v.entries()] : v), '  ');
         jsonOverlay.style.display = 'block';
       }
     }, { passive: true });
@@ -258,29 +330,48 @@
   }
 
   // new hash
-  if (window.location.hash.includes('#new')) {
-    const e = new CustomEvent('click', { detail: { hash: true } });
-    document.getElementById('new-button').dispatchEvent(e);
+  if (hash.has('new')) {
+    document.getElementById('new-button').click();
+  }
+
+  // ep hash
+  if (hash.has('id') && hash.has('ep')) {
+    const iframe = document.getElementById('iframe');
+    iframe.addEventListener('load', () => {
+      if (items.get(iframe.dataset.key)?.top?.id === hash.get('id')) {
+        iframe.contentWindow.postMessage({
+          key: 'kodik_player_api',
+          value: { method: 'change_episode', episode: Number.parseInt(hash.get('ep'), 10) },
+        }, '*');
+      }
+    }, { once: true, passive: true });
   }
 
   { // ids from url hash
-    const { id, shikimoriId } = hashGet();
+    const id = hash.get('id');
+    const shikimoriId = hash.get('shikimori');
     if (id || shikimoriId) {
       const e = new CustomEvent('submit', { detail: { id, shikimoriId } });
       document.getElementById('search-form').dispatchEvent(e);
     }
   }
-  // update hash by message from iframe
-  window.addEventListener('message', ({ data }) => {
-    if (data?.key === 'kodik_player_current_episode') {
-      const { id } = hashGet();
-      const item = sortedItems.find((it) => Object.values(it.tr).includes(id));
-      if (item) {
-        const newId = item.tr[data.value.translation.id];
-        if (newId) {
-          hashSet({ id: newId, shikimoriId: item.shikimoriId });
+
+  { // update hash by message from iframe
+    const iframe = document.getElementById('iframe');
+    window.addEventListener('message', ({ data }) => {
+      const { key } = iframe.dataset;
+      if (data?.key === 'kodik_player_current_episode') {
+        const item = items.get(key);
+        if (item?.tr.has(data.value.translation.id)) {
+          const id = item.tr.get(data.value.translation.id);
+          item.top = item.raw.get(id);
+          hash.set('id', id);
+          if (data.value.episode) hash.set('ep', data.value.episode);
+          else hash.delete('ep');
+          const elemet = document.querySelector(`.item[data-key="${key}"] .string`);
+          elemet.innerHTML = buildString(item);
         }
       }
-    }
-  });
+    }, { passive: true });
+  }
 }());

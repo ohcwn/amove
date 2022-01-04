@@ -15,9 +15,6 @@
 
 <body>
   <video autoplay muted loop id="background" src="wallpaper/0.mp4" type="video/mp4"></video>
-  <script>
-    const backgroundIndex = localStorage.getItem('backgroundIndex') || 0;
-    if (backgroundIndex) document.getElementById("background").src = `wallpaper/${backgroundIndex}.mp4`; </script>
   <div id="iframe-overlay">
     <iframe id="iframe" allow="fullscreen"></iframe>
   </div>
