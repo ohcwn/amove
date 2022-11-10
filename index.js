@@ -363,11 +363,13 @@ if (hash.has('id') && hash.has('ep')) {
         const id = item.tr.get(data.value.translation.id);
         item.top = item.raw.get(id);
         hash.set('id', id);
-        document.title = item.top.title;
         if (data.value.episode) {
           hash.set('ep', data.value.episode);
-          document.title += ` ${data.value.episode}`;
-        } else hash.delete('ep');
+          document.title = `(${data.value.episode}) ${item.top.title}`;
+        } else {
+          hash.delete('ep');
+          document.title = item.top.title;
+        }
         const elemet = document.querySelector(`.item[data-key="${key}"] .string`);
         elemet.innerHTML = buildString(item);
       }
