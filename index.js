@@ -114,8 +114,8 @@ const getImg = (() => {
     const id = item.shikimori_id;
     if (!id) return noImgUrl;
     const sub = subs[id % subs.length];
-    const timestamp = 1604598358 + (+id);
-    return `https://${sub}.shikimori.one/system/animes/original/${id}.jpg?${timestamp}`;
+    const timestamp = 1650095057 + (+id);
+    return `https://${sub}.shikimori.me/system/animes/original/${id}.jpg?${timestamp}`;
   };
 })();
 
