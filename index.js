@@ -2,34 +2,34 @@ const hash = (() => {
   class Hash extends Map {
     constructor() {
       super();
-      this.#read();
+      this.read(); // #
       window.addEventListener('hashchange', () => {
-        this.#read();
+        this.read(); // #
       }, { passive: true });
     }
 
-    #cache = '';
+    cache = ''; // #
 
-    #read() {
+    read() { // #
       const str = window.location.hash.substring(1);
-      if (this.#cache === str) return;
+      if (this.cache === str) return; // #
       super.clear();
       if (!str) return;
       const pairs = str.split('&');
       pairs.forEach((entry) => {
         super.set(...entry.split('-', 2));
       });
-      this.#cache = str;
+      this.cache = str; // #
     }
 
-    #write() {
+    write() { // #
       let str = '';
       super.forEach((value, key) => {
         if (str) str += '&';
         str += `${key}`;
         if (typeof value !== 'undefined') str += `-${value}`;
       });
-      this.#cache = str;
+      this.cache = str; // #
       window.location.hash = str;
     }
 
@@ -52,22 +52,22 @@ const hash = (() => {
         if (value.indexOf('serial-') === 0) {
           super.delete('move');
           super.set('serial', value.substring(7));
-          this.#write();
+          this.write(); // #
         } else if (value.indexOf('move-') === 0) {
           super.delete('serial');
           super.set('move', value.substring(5));
-          this.#write();
+          this.write(); // #
         }
         return this;
       }
       super.set(key, value);
-      this.#write();
+      this.write(); // #
       return this;
     }
 
     delete(key) {
       const r = key === 'id' ? super.delete('serial') || super.delete('move') : super.delete(key);
-      if (r) this.#write();
+      if (r) this.write(); // #
       return r;
     }
 
@@ -76,10 +76,10 @@ const hash = (() => {
       super.clear();
       if (bg) {
         super.set('bg', bg);
-        this.#cache = `bg-${bg}`;
+        this.cache = `bg-${bg}`; // #
         window.location.hash = `bg-${bg}`;
       } else {
-        this.#cache = '';
+        this.cache = ''; // #
         window.location.hash = '';
       }
     }
@@ -225,9 +225,14 @@ const sendQuery = async (query) => {
     const list = document.getElementById('list');
     const status = document.getElementById('status');
     list.style.display = 'none';
-    const [results, searchTime] = await sendQuery(`list?${queryParam}`);
+    // const [results, searchTime] = await sendQuery(`list?${queryParam}`);
+    const temp0 = await sendQuery(`list?${queryParam}`);
+    const [results, searchTime] = temp0;
+
     if (results.length === 0) return;
-    items = new Map([...await parse(results.reverse())].reverse());
+    // items = new Map([...await parse(results.reverse())].reverse());
+    const temp1 = await parse(results.reverse());
+    items = new Map([...temp1].reverse());
     status.textContent = `Найдено: ${items.size} [${results.length}] (${(searchTime) / 1000} сек.)`;
     list.innerHTML = buildHTML(items);
     list.style.display = 'block';
@@ -259,7 +264,9 @@ const sendQuery = async (query) => {
     } else {
       queryParam = `title=${encodeURI(query)}`;
     }
-    const [results, searchTime] = await sendQuery(`search?${queryParam}`);
+    // const [results, searchTime] = await sendQuery(`search?${queryParam}`);
+    const temp = await sendQuery(`search?${queryParam}`);
+    const [results, searchTime] = temp;
     if (results.length === 0) return;
     items = await parse(results);
     if (id && results.length > 1) {
