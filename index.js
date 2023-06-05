@@ -225,14 +225,9 @@ const sendQuery = async (query) => {
     const list = document.getElementById('list');
     const status = document.getElementById('status');
     list.style.display = 'none';
-    // const [results, searchTime] = await sendQuery(`list?${queryParam}`);
-    const temp0 = await sendQuery(`list?${queryParam}`);
-    const [results, searchTime] = temp0;
-
+    const [results, searchTime] = await sendQuery(`list?${queryParam}`);
     if (results.length === 0) return;
-    // items = new Map([...await parse(results.reverse())].reverse());
-    const temp1 = await parse(results.reverse());
-    items = new Map([...temp1].reverse());
+    items = new Map([...await parse(results.reverse())].reverse());
     status.textContent = `Найдено: ${items.size} [${results.length}] (${(searchTime) / 1000} сек.)`;
     list.innerHTML = buildHTML(items);
     list.style.display = 'block';
@@ -264,9 +259,7 @@ const sendQuery = async (query) => {
     } else {
       queryParam = `title=${encodeURI(query)}`;
     }
-    // const [results, searchTime] = await sendQuery(`search?${queryParam}`);
-    const temp = await sendQuery(`search?${queryParam}`);
-    const [results, searchTime] = temp;
+    const [results, searchTime] = await sendQuery(`search?${queryParam}`);
     if (results.length === 0) return;
     items = await parse(results);
     if (id && results.length > 1) {
