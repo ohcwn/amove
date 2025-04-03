@@ -109,12 +109,12 @@ let items = new Map();
 
 const getImg = (() => {
   const noImgUrl = 'no-img.jpg';
-  const subs = ['nyaa', 'kawai', 'moe', 'desu', 'dere'];
+  const subs = ['nyaa', 'moe', 'desu', 'dere']; // kawai
   return (item) => {
     const id = item.shikimori_id;
     if (!id) return noImgUrl;
     const sub = subs[id % subs.length];
-    const timestamp = 1650095057 + (+id);
+    const timestamp = 1723345562 + (+id);
     return `https://${sub}.shikimori.me/system/animes/original/${id}.jpg?${timestamp}`;
   };
 })();
@@ -122,7 +122,7 @@ const getImg = (() => {
 const parse = async (results) => {
   const its = new Map();
   await Promise.all(results.map(async (r) => {
-    const key = await sha(r.imdb_id || r.kinopoisk_id || r.shikimori_id || r.worldart_link || `${r.type}${r.year}${r.title_orig}`);
+    const key = await sha(r.worldart_link || r.shikimori_id || r.imdb_id || r.kinopoisk_id || `${r.type}${r.year}${r.title_orig}`);
     if (!its.has(key)) {
       its.set(key, {
         key, img: getImg(r), y: r.year, ep: r.last_episode, top: r, raw: new Map(), tr: new Map(),
