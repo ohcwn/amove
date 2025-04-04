@@ -2,35 +2,67 @@ const hash = (() => {
   class Hash extends Map {
     constructor() {
       super();
-      this.read(); // #
+      this.read();
       window.addEventListener('hashchange', () => {
-        this.read(); // #
+        if (this.ignore) {
+          --this.ignore;
+        } else {
+          this.read();
+          this.callCallbacks();
+        }
       }, { passive: true });
     }
 
-    cache = ''; // #
+    cache = '';
 
-    read() { // #
+    ignore = 0;
+
+    callbacks = new Set();
+
+    addCallback(cb) {
+      this.callbacks.add(cb);
+      return this;
+    }
+
+    hasCallback(cb) {
+      return this.callbacks.has(cb);
+    }
+
+    delCallback(cb) {
+      return this.callbacks.delete(cb);
+    }
+
+    callCallbacks() {
+      this.callbacks.forEach((cb) => { cb(); });
+    }
+
+    read() {
       const str = window.location.hash.substring(1);
-      if (this.cache === str) return; // #
+      if (this.cache === str) return;
       super.clear();
       if (!str) return;
       const pairs = str.split('&');
       pairs.forEach((entry) => {
         super.set(...entry.split('-', 2));
       });
-      this.cache = str; // #
+      this.cache = str;
+      this.write();
     }
 
-    write() { // #
+    write() {
       let str = '';
-      super.forEach((value, key) => {
+      const pairs = [...super.entries()];
+      pairs.sort((a, b) => (a[0] > b[0] ? 1 : -1));
+      pairs.forEach(([key, value]) => {
         if (str) str += '&';
         str += `${key}`;
         if (typeof value !== 'undefined') str += `-${value}`;
       });
-      this.cache = str; // #
-      window.location.hash = str;
+      if (str !== this.cache) {
+        this.cache = str;
+        ++this.ignore;
+        window.location.hash = str;
+      }
     }
 
     has(key) {
@@ -52,80 +84,51 @@ const hash = (() => {
         if (value.indexOf('serial-') === 0) {
           super.delete('move');
           super.set('serial', value.substring(7));
-          this.write(); // #
+          this.write();
         } else if (value.indexOf('move-') === 0) {
           super.delete('serial');
           super.set('move', value.substring(5));
-          this.write(); // #
+          this.write();
         }
         return this;
       }
       super.set(key, value);
-      this.write(); // #
+      this.write();
       return this;
     }
 
     delete(key) {
       const r = key === 'id' ? super.delete('serial') || super.delete('move') : super.delete(key);
-      if (r) this.write(); // #
+      if (r) this.write();
       return r;
     }
 
     clear() {
       const bg = super.get('bg');
       super.clear();
-      if (bg) {
-        super.set('bg', bg);
-        this.cache = `bg-${bg}`; // #
-        window.location.hash = `bg-${bg}`;
-      } else {
-        this.cache = ''; // #
+      if (this.cache !== '') {
+        this.cache = '';
+        ++this.ignore;
         window.location.hash = '';
       }
+      if (bg) this.set('bg', bg);
     }
   }
   return new Hash();
 })();
 
-const sha = (() => {
-  const byteToHex = (() => {
-    const alphabet = Array.from({ length: 0xff }, (_, i) => i.toString(16).padStart(2, '0'));
-    return (arrayBuffer) => new Uint8Array(arrayBuffer).reduce((p, c) => p + alphabet[c], '');
-  })();
-  const byteToBase64 = (arrayBuffer) => btoa(
-    String.fromCharCode.apply(null, new Uint8Array(arrayBuffer)),
-  );
-  const whiteListAlg = new Set(['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512']);
-  return async (text, algorithm = 'SHA-256', encoding = 'hex') => {
-    const upperAlg = algorithm.toUpperCase();
-    const alg = whiteListAlg.has(upperAlg) ? upperAlg : 'SHA-256';
-    const byteArray = new TextEncoder().encode(text);
-    const digest = await crypto.subtle.digest(alg, byteArray);
-    return encoding === 'base64' ? byteToBase64(digest) : byteToHex(digest);
-  };
-})();
-
 let items = new Map();
 
-const getImg = (() => {
-  const noImgUrl = 'no-img.jpg';
-  const subs = ['nyaa', 'moe', 'desu', 'dere']; // kawai
-  return (item) => {
-    const id = item.shikimori_id;
-    if (!id) return noImgUrl;
-    const sub = subs[id % subs.length];
-    const timestamp = 1723345562 + (+id);
-    return `https://${sub}.shikimori.me/system/animes/original/${id}.jpg?${timestamp}`;
-  };
-})();
-
-const parse = async (results) => {
+const parse = (results) => {
   const its = new Map();
-  await Promise.all(results.map(async (r) => {
-    const key = await sha(r.worldart_link || r.shikimori_id || r.imdb_id || r.kinopoisk_id || `${r.type}${r.year}${r.title_orig}`);
+  const keyTypes = ['worldart_link', 'shikimori_id', 'kinopoisk_id', 'imdb_id', 'mdl_id'];
+  results.forEach((r) => {
+    const keyType = keyTypes.find((ktype) => r[ktype]);
+    const key = keyType ? `${keyType}-${r[keyType]}` : `tyt-${r.type}${r.year}${r.title_orig}`;
     if (!its.has(key)) {
+      const img = r.material_data?.anime_poster_url || r.material_data?.poster_url || 'no-img.jpg';
       its.set(key, {
-        key, img: getImg(r), y: r.year, ep: r.last_episode, top: r, raw: new Map(), tr: new Map(),
+        key, img, y: r.year, ep: r.last_episode, top: r, raw: new Map(), tr: new Map(),
       });
     } else if (its.get(key).top.last_episode < r.last_episode) {
       its.get(key).top = r;
@@ -133,7 +136,7 @@ const parse = async (results) => {
     }
     its.get(key).raw.set(r.id, r);
     its.get(key).tr.set(r.translation.id, r.id);
-  }));
+  });
   return its;
 };
 
@@ -152,6 +155,27 @@ const buildString = (item) => {
   return string + str;
 };
 
+const buildLinks = (top) => {
+  const links = [];
+  const buildRate = (r) => (r ? ` ${r}` : '');
+  if (top.shikimori_id) {
+    const r8 = buildRate(top.material_data?.shikimori_rating);
+    links.push(`<a href="https://shikimori.one/animes/${top.shikimori_id}" target="_blank" rel="noreferrer">shikimori${r8}</a>`);
+  }
+  if (top.worldart_link) {
+    links.push(`<a href="${top.worldart_link}" target="_blank" rel="noreferrer">worldart</a>`);
+  }
+  if (top.kinopoisk_id) {
+    const r8 = buildRate(top.material_data?.kinopoisk_rating);
+    links.push(`<a href="https://www.kinopoisk.ru/film/${top.kinopoisk_id}" target="_blank" rel="noreferrer">kinopoisk${r8}</a>`);
+  }
+  if (top.imdb_id) {
+    const r8 = buildRate(top.material_data?.imdb_rating);
+    links.push(`<a href="https://www.imdb.com/title/${top.imdb_id}" target="_blank" rel="noreferrer">imdb${r8}</a>`);
+  }
+  return links.join(', ');
+};
+
 const buildHTML = (its) => {
   let html = '';
   its.forEach((item, key) => {
@@ -165,6 +189,7 @@ const buildHTML = (its) => {
   <p class="title">${top.title ?? ''}</p>
   <p class="titleOrig">${top.title_orig ?? ''}</p>
   <p class="titleOther">${top.other_title ?? ''}</p>
+  <p class="links">${buildLinks(top)}</p>
   <p class="string">${buildString(item)}</p>
 </div>
 </div>
@@ -183,7 +208,7 @@ const sendQuery = async (query) => {
   const searchStartTime = Date.now();
   status.textContent = 'Поиск…';
   status.style.display = 'block';
-  const res = await fetch(`${baseURL}${query}`);
+  const res = await fetch(`${baseURL}${query}&with_material_data=true`);
   const resJson = await res.json();
   const { results } = resJson;
   const searchTime = Date.now() - searchStartTime;
@@ -195,27 +220,6 @@ const sendQuery = async (query) => {
   return [results, searchTime];
 };
 
-{ // background
-  const count = 3;
-  const background = document.getElementById('background');
-  { // background initial set
-    const bg = Number.parseInt(hash.get('bg'), 10);
-    const index = bg % count;
-    if (index) {
-      background.src = `wallpaper/${index}.mp4`;
-      if (index !== bg) hash.set('bg', index);
-    } else hash.delete('bg');
-  }
-  // backgroundButton click
-  const backgroundButton = document.getElementById('background-button');
-  backgroundButton.addEventListener('click', () => {
-    let index = Number.parseInt(hash.get('bg'), 10) || 0;
-    index = (index + 1) % count;
-    background.src = `wallpaper/${index}.mp4`;
-    if (index === 0) hash.delete('bg');
-    else hash.set('bg', index);
-  }, { passive: true });
-}
 { // newButton click
   const newButton = document.getElementById('new-button');
   newButton.addEventListener('click', async () => {
@@ -227,10 +231,12 @@ const sendQuery = async (query) => {
     list.style.display = 'none';
     const [results, searchTime] = await sendQuery(`list?${queryParam}`);
     if (results.length === 0) return;
-    items = new Map([...await parse(results.reverse())].reverse());
+    items = new Map([...parse(results.reverse())].reverse());
     status.textContent = `Найдено: ${items.size} [${results.length}] (${(searchTime) / 1000} сек.)`;
     list.innerHTML = buildHTML(items);
     list.style.display = 'block';
+    const iframe = document.getElementById('iframe');
+    iframe.dataset.key = '';
   }, { passive: true });
 }
 
@@ -261,7 +267,7 @@ const sendQuery = async (query) => {
     }
     const [results, searchTime] = await sendQuery(`search?${queryParam}`);
     if (results.length === 0) return;
-    items = await parse(results);
+    items = parse(results);
     if (id && results.length > 1) {
       const [[, item]] = items;
       if (item.raw.has(id)) item.top = item.raw.get(id);
@@ -269,6 +275,8 @@ const sendQuery = async (query) => {
     status.textContent = `Найдено: ${items.size} [${results.length}] (${(searchTime) / 1000} сек.)`;
     list.innerHTML = buildHTML(items);
     list.style.display = 'block';
+    const iframe = document.getElementById('iframe');
+    iframe.dataset.key = '';
   });
 }
 
@@ -290,6 +298,7 @@ const sendQuery = async (query) => {
         iframe.src = top.link;
         iframe.dataset.key = key;
         hash.delete('new');
+        hash.delete('ep');
         hash.set('shikimori', top.shikimori_id);
         hash.set('id', top.id);
         const prevElement = document.querySelector('.item.current');
@@ -326,33 +335,6 @@ const sendQuery = async (query) => {
   }, { passive: true });
 }
 
-// new hash
-if (hash.has('new')) {
-  document.getElementById('new-button').click();
-}
-
-// ep hash
-if (hash.has('id') && hash.has('ep')) {
-  const iframe = document.getElementById('iframe');
-  iframe.addEventListener('load', () => {
-    if (items.get(iframe.dataset.key)?.top?.id === hash.get('id')) {
-      iframe.contentWindow.postMessage({
-        key: 'kodik_player_api',
-        value: { method: 'change_episode', episode: Number.parseInt(hash.get('ep'), 10) },
-      }, '*');
-    }
-  }, { once: true, passive: true });
-}
-
-{ // ids from url hash
-  const id = hash.get('id');
-  const shikimoriId = hash.get('shikimori');
-  if (id || shikimoriId) {
-    const e = new CustomEvent('submit', { detail: { id, shikimoriId } });
-    document.getElementById('search-form').dispatchEvent(e);
-  }
-}
-
 { // update hash and page title by message from iframe
   const iframe = document.getElementById('iframe');
   window.addEventListener('message', ({ data }) => {
@@ -376,3 +358,60 @@ if (hash.has('id') && hash.has('ep')) {
     }
   }, { passive: true });
 }
+
+const backgroundCount = 3;
+
+{ // backgroundButton click
+  const background = document.getElementById('background');
+  const backgroundButton = document.getElementById('background-button');
+  backgroundButton.addEventListener('click', () => {
+    let index = Math.abs(Number.parseInt(hash.get('bg'), 10)) || 0;
+    index = (index + 1) % backgroundCount;
+    background.src = `wallpaper/${index}.mp4`;
+    if (index === 0) hash.delete('bg');
+    else hash.set('bg', index);
+  }, { passive: true });
+}
+
+{ // hashchange callback
+  const background = document.getElementById('background');
+  const newButton = document.getElementById('new-button');
+  const iframe = document.getElementById('iframe');
+  const searchForm = document.getElementById('search-form');
+  hash.addCallback(() => {
+    const bg = Math.abs(Number.parseInt(hash.get('bg'), 10)) || 0;
+    const index = bg % backgroundCount;
+    const newSrc = `wallpaper/${index}.mp4`;
+    if (newSrc.slice(-15) !== background.src.slice(-15)) background.src = newSrc;
+    if (index !== bg) {
+      if (index !== 0) hash.set('bg', index);
+      else hash.delete('bg');
+    }
+
+    if (hash.has('new')) {
+      newButton.click();
+      return;
+    }
+
+    const id = hash.get('id');
+    const ep = hash.get('ep');
+    const shikimoriId = hash.get('shikimori');
+    if (id && ep) {
+      iframe.addEventListener('load', () => {
+        if (id === items.get(iframe.dataset.key)?.top?.id) {
+          iframe.contentWindow.postMessage({
+            key: 'kodik_player_api',
+            value: { method: 'change_episode', episode: Number.parseInt(ep, 10) },
+          }, '*');
+        }
+      }, { once: true, passive: true });
+    }
+    if (id || shikimoriId) {
+      const e = new CustomEvent('submit', { detail: { id, shikimoriId } });
+      searchForm.dispatchEvent(e);
+    }
+  });
+}
+hash.callCallbacks();
+
+window.hash = hash;

@@ -183,6 +183,11 @@ body {
   margin-top: auto;
 }
 
+.links a {
+  color: rgb(200 200 200 / 80%);
+  font-size: 14px;
+}
+
 .underline {
   color: rgb(180 180 180 / 80%);
   margin-top: auto;
