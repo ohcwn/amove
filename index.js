@@ -204,7 +204,7 @@ const buildHTML = (its) => {
 
 const sendQuery = async (query) => {
   const status = document.getElementById('status');
-  const baseURL = 'https://metamedia.glitch.me/api/';
+  const baseURL = 'https://api.andb.workers.dev/';
   const searchStartTime = Date.now();
   status.textContent = 'Поиск…';
   status.style.display = 'block';
